@@ -4,16 +4,31 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+
+	"github.com/lucashthiele/pokedexcli/internal/api"
+	"github.com/lucashthiele/pokedexcli/model"
 )
+
+const baseUrl = "https://pokeapi.co/api/v2"
+
+type config struct {
+	Previous string
+	Next     string
+}
 
 type cliCommand struct {
 	name        string
 	description string
-	callback    func() error
+	callback    func(*config) error
 }
 
 func main() {
 	commandMap := getCommandMap()
+
+	config := &config{
+		Previous: "",
+		Next:     baseUrl + "/location-area",
+	}
 
 	for {
 		fmt.Printf("pokedex > ")
@@ -30,15 +45,25 @@ func main() {
 		command, ok := commandMap[option]
 		if !ok {
 			fmt.Fprintln(os.Stderr, "Unknow Command")
-			callbackHelp()
+			callbackHelp(nil)
 		} else {
-			command.callback()
+			command.callback(config)
 		}
 	}
 }
 
 func getCommandMap() map[string]cliCommand {
 	return map[string]cliCommand{
+		"map": {
+			name:        "map",
+			description: "Displays the name of 20 location areas in Pokemon world. Any subsequent call to map, will return the next 20 locations",
+			callback:    callbackMap,
+		},
+		"mapb": {
+			name:        "mapb",
+			description: "Displays the 20 previous locations areas",
+			callback:    callbackMapb,
+		},
 		"help": {
 			name:        "help",
 			description: "Displays a help message",
@@ -52,7 +77,7 @@ func getCommandMap() map[string]cliCommand {
 	}
 }
 
-func callbackHelp() error {
+func callbackHelp(config *config) error {
 	commands := getCommandMap()
 	fmt.Printf("\nWelcome to the pokedex\nUsage:\n\n")
 
@@ -64,7 +89,44 @@ func callbackHelp() error {
 	return nil
 }
 
-func callbackExit() error {
+func callbackExit(config *config) error {
 	os.Exit(0)
 	return nil
+}
+
+func callbackMap(config *config) error {
+	response, err := api.GetLocations(config.Next)
+	if err != nil {
+		return fmt.Errorf("error fetching data from api: %v", err)
+	}
+
+	updateConfig(config, response)
+
+	printLocations(response.Locations)
+
+	return nil
+}
+
+func callbackMapb(config *config) error {
+	response, err := api.GetLocations(config.Previous)
+	if err != nil {
+		return fmt.Errorf("error fetching data from api: %v", err)
+	}
+
+	updateConfig(config, response)
+
+	printLocations(response.Locations)
+
+	return nil
+}
+
+func printLocations(locations []model.Location) {
+	for _, location := range locations {
+		fmt.Printf("%s\n", location.Name)
+	}
+}
+
+func updateConfig(config *config, response model.LocationResponse) {
+	config.Next = response.Next
+	config.Previous = response.Previous
 }
