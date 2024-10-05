@@ -41,6 +41,22 @@ Once built, you can start the CLI REPL by running the following command:
 
 You will enter an interactive mode where you can begin searching for Pokémon by their names or types, and view their stats.
 
+## Commands
+
+The following commands are available in the PokedexCLI:
+
+- **map**:  
+  Displays the names of 20 location areas in the Pokémon world. If called multiple times, each call will return the next 20 locations.
+
+- **mapb**:  
+  Displays the 20 previous location areas in the Pokémon world, allowing you to navigate back through the list.
+
+- **help**:  
+  Displays a help message, providing details on how to use the CLI and its commands.
+
+- **exit**:  
+  Exits the application, ending the REPL session.
+  
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
