@@ -22,7 +22,7 @@ func GetLocations(url string) (model.LocationResponse, error) {
 
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return model.LocationResponse{}, fmt.Errorf(fmt.Sprintf("BodyContent: %v", body))
+		return model.LocationResponse{}, fmt.Errorf("BodyContent: %v", body)
 	}
 
 	location := model.LocationResponse{}
