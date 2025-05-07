@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/lucashthiele/pokedexcli/internal/api"
 	"github.com/lucashthiele/pokedexcli/model"
@@ -129,4 +130,14 @@ func printLocations(locations []model.Location) {
 func updateConfig(config *config, response model.LocationResponse) {
 	config.Next = response.Next
 	config.Previous = response.Previous
+}
+
+func cleanInput(text string) []string {
+	slicedStrings := strings.Split(text, " ")
+
+	for i, str := range slicedStrings {
+		slicedStrings[i] = strings.ToLower(str)
+	}
+
+	return slicedStrings
 }
