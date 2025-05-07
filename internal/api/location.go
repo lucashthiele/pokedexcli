@@ -25,12 +25,31 @@ func GetLocations(url string) (model.LocationResponse, error) {
 		return model.LocationResponse{}, fmt.Errorf("BodyContent: %v", body)
 	}
 
-	location := model.LocationResponse{}
+	location, err := UnmarshalLocationResponse(body)
 
-	err = json.Unmarshal(body, &location)
 	if err != nil {
 		return model.LocationResponse{}, err
 	}
 
 	return location, nil
+}
+
+func UnmarshalLocationResponse(response []byte) (model.LocationResponse, error) {
+	location := model.LocationResponse{}
+
+	err := json.Unmarshal(response, &location)
+	if err != nil {
+		return location, err
+	}
+
+	return location, nil
+}
+
+func MarshalLocation(location model.LocationResponse) ([]byte, error) {
+	data, err := json.Marshal(location)
+	if err != nil {
+		return nil, err
+	}
+
+	return data, nil
 }

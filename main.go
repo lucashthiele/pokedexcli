@@ -4,168 +4,59 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/lucashthiele/pokedexcli/config"
 	"github.com/lucashthiele/pokedexcli/internal/api"
-	"github.com/lucashthiele/pokedexcli/internal/logs"
 	"github.com/lucashthiele/pokedexcli/internal/pokecache"
 	"github.com/lucashthiele/pokedexcli/model"
 )
 
-const baseUrl = "https://pokeapi.co/api/v2"
-const cacheDuration = time.Second * time.Duration(10)
+const baseUrl = config.BaseUrl
+const cacheDuration = time.Minute * time.Duration(10)
 
-type config struct {
+type state struct {
 	Previous string
 	Next     string
 	Cache    *pokecache.Cache
 }
 
 type cliCommand struct {
-	name        string
-	description string
-	callback    func(*config) error
-}
-
-func getCommandMap() map[string]cliCommand {
-	return map[string]cliCommand{
-		"map": {
-			name:        "map",
-			description: "Displays the name of 20 location areas in Pokemon world. Any subsequent call to map, will return the next 20 locations",
-			callback:    callbackMap,
-		},
-		"mapb": {
-			name:        "mapb",
-			description: "Displays the 20 previous locations areas",
-			callback:    callbackMapb,
-		},
-		"help": {
-			name:        "help",
-			description: "Displays a help message",
-			callback:    callbackHelp,
-		},
-		"exit": {
-			name:        "exit",
-			description: "Exits the program",
-			callback:    callbackExit,
-		},
-	}
-}
-
-func callbackHelp(config *config) error {
-	commands := getCommandMap()
-	fmt.Printf("\nWelcome to the Pokedex!\nUsage:\n\n")
-
-	for _, value := range commands {
-		fmt.Printf("%s: %s\n", value.name, value.description)
-	}
-	fmt.Print("\n")
-
-	return nil
-}
-
-func callbackExit(config *config) error {
-	fmt.Printf("Closing the Pokedex... Goodbye!\n")
-	os.Exit(0)
-	return nil
-}
-
-func checkCache(config *config, url string) (bool, error) {
-	if data, found := config.Cache.Get(url); found {
-		logs.Log("found entry in cache")
-		location := model.LocationResponse{}
-
-		err := json.Unmarshal(data, &location)
-		if err != nil {
-			return false, err
-		}
-
-		updateConfig(config, location)
-
-		printLocations(location.Locations)
-
-		return true, nil
-	}
-
-	logs.Log("entry not found in cache, sending request")
-
-	return false, nil
-}
-
-func callbackMap(config *config) error {
-	requestUrl := config.Next
-	foundCache, err := checkCache(config, requestUrl)
-	if foundCache {
-		return nil
-	}
-
-	if err != nil {
-		return fmt.Errorf("error fetching data from cache: %v", err)
-	}
-
-	response, err := api.GetLocations(requestUrl)
-	if err != nil {
-		return fmt.Errorf("error fetching data from api: %v", err)
-	}
-
-	updateConfig(config, response)
-
-	printLocations(response.Locations)
-
-	data, err := json.Marshal(response)
-	if err != nil {
-		return fmt.Errorf("error marshling data from api: %v", err)
-	}
-	config.Cache.Add(requestUrl, data)
-
-	return nil
-}
-
-func callbackMapb(config *config) error {
-	requestUrl := config.Previous
-	if requestUrl == "" {
-		fmt.Printf("you're on the first page\n")
-		return nil
-	}
-
-	foundCache, err := checkCache(config, requestUrl)
-	if foundCache {
-		return nil
-	}
-
-	if err != nil {
-		return fmt.Errorf("error fetching data from cache: %v", err)
-	}
-
-	response, err := api.GetLocations(requestUrl)
-	if err != nil {
-		return fmt.Errorf("error fetching data from api: %v", err)
-	}
-
-	updateConfig(config, response)
-
-	printLocations(response.Locations)
-
-	data, err := json.Marshal(response)
-	if err != nil {
-		return fmt.Errorf("error marshling data from api: %v", err)
-	}
-	config.Cache.Add(requestUrl, data)
-
-	return nil
+	name            string
+	description     string
+	callback        func(*state, []string) error
+	validateCommand func(arguments []string) error
 }
 
 func printLocations(locations []model.Location) {
 	for _, location := range locations {
-		fmt.Printf("%s\n", location.Name)
+		fmt.Printf(" - %s\n", location.Name)
 	}
 }
 
-func updateConfig(config *config, response model.LocationResponse) {
-	config.Next = response.Next
-	config.Previous = response.Previous
+func printPokemons(pokemons []model.PokemonEncounters) {
+	if len(pokemons) > 0 {
+		fmt.Printf("Found Pokemon:\n")
+	}
+	for _, pokemon := range pokemons {
+		fmt.Printf(" - %s\n", pokemon.Pokemon.Name)
+	}
+}
+
+func updateState(state *state, response model.LocationResponse) {
+	state.Next = response.Next
+	state.Previous = response.Previous
+}
+
+func getCachedValue(state *state, url string) []byte {
+	if data, found := state.Cache.Get(url); found {
+		return data
+	}
+
+	return nil
 }
 
 func cleanInput(text string) []string {
@@ -178,12 +69,181 @@ func cleanInput(text string) []string {
 	return slicedStrings
 }
 
+func callbackMap(state *state, params []string) error {
+	requestUrl := state.Next
+	cachedData := getCachedValue(state, requestUrl)
+	if cachedData != nil {
+		location, err := api.UnmarshalLocationResponse(cachedData)
+
+		if err != nil {
+			return err
+		}
+
+		updateState(state, location)
+		printLocations(location.Locations)
+		return nil
+	}
+
+	response, err := api.GetLocations(requestUrl)
+	if err != nil {
+		return fmt.Errorf("error fetching data from api: %v", err)
+	}
+
+	updateState(state, response)
+	printLocations(response.Locations)
+
+	data, err := json.Marshal(response)
+	if err != nil {
+		return fmt.Errorf("error marshling data from api: %v", err)
+	}
+	state.Cache.Add(requestUrl, data)
+
+	return nil
+}
+
+func callbackMapb(state *state, params []string) error {
+	requestUrl := state.Previous
+	if requestUrl == "" {
+		fmt.Printf("you're on the first page\n")
+		return nil
+	}
+
+	cachedData := getCachedValue(state, requestUrl)
+	if cachedData != nil {
+		location, err := api.UnmarshalLocationResponse(cachedData)
+
+		if err != nil {
+			return err
+		}
+
+		updateState(state, location)
+		printLocations(location.Locations)
+		return nil
+	}
+
+	response, err := api.GetLocations(requestUrl)
+	if err != nil {
+		return fmt.Errorf("error fetching data from api: %v", err)
+	}
+
+	updateState(state, response)
+	printLocations(response.Locations)
+
+	data, err := api.MarshalLocation(response)
+	if err != nil {
+		return err
+	}
+	state.Cache.Add(requestUrl, data)
+
+	return nil
+}
+
+func validateExploreCommand(arguments []string) error {
+	if len(arguments) != 2 {
+		return fmt.Errorf("expected 1 argument, found %d", len(arguments)-1)
+	}
+	return nil
+}
+
+func callbackExplore(state *state, params []string) error {
+	location := params[0]
+	if location == "" {
+		return fmt.Errorf("you need to provide a location are for this command\n")
+	}
+
+	fmt.Printf("exploring %s...\n", location)
+
+	requestUrl, err := url.JoinPath(config.BaseUrl, "location-area", location)
+	if err != nil {
+		return err
+	}
+
+	cachedData := getCachedValue(state, requestUrl)
+	if cachedData != nil {
+		pokemonResp, err := api.UnmarshalPokemonResponse(cachedData)
+		if err != nil {
+			return err
+		}
+
+		printPokemons(pokemonResp.PokemonEncounters)
+		return nil
+	}
+
+	response, err := api.GetPokemons(requestUrl)
+	if err != nil {
+		return fmt.Errorf("error fetching data from api: %v", err)
+	}
+
+	printPokemons(response.PokemonEncounters)
+
+	data, err := api.MarshalPokemon(response)
+	if err != nil {
+		return err
+	}
+	state.Cache.Add(requestUrl, data)
+
+	return nil
+}
+
+func callbackHelp(state *state, params []string) error {
+	commands := getCommandMap()
+	fmt.Printf("\nWelcome to the Pokedex!\nUsage:\n\n")
+
+	for _, value := range commands {
+		fmt.Printf("%s: %s\n", value.name, value.description)
+	}
+	fmt.Print("\n")
+
+	return nil
+}
+
+func callbackExit(state *state, params []string) error {
+	fmt.Printf("Closing the Pokedex... Goodbye!\n")
+	os.Exit(0)
+	return nil
+}
+
+func getCommandMap() map[string]cliCommand {
+	return map[string]cliCommand{
+		"map": {
+			name:            "map",
+			description:     "Displays the name of 20 location areas in Pokemon world. Any subsequent call to map, will return the next 20 locations",
+			callback:        callbackMap,
+			validateCommand: func(arguments []string) error { return nil },
+		},
+		"mapb": {
+			name:            "mapb",
+			description:     "Displays the 20 previous locations areas",
+			callback:        callbackMapb,
+			validateCommand: func(arguments []string) error { return nil },
+		},
+		"explore": {
+			name:            "explore <location-name>",
+			description:     "Display all pokemons within that location area",
+			callback:        callbackExplore,
+			validateCommand: validateExploreCommand,
+		},
+		"help": {
+			name:            "help",
+			description:     "Displays a help message",
+			callback:        callbackHelp,
+			validateCommand: func(arguments []string) error { return nil },
+		},
+		"exit": {
+			name:            "exit",
+			description:     "Exits the program",
+			callback:        callbackExit,
+			validateCommand: func(arguments []string) error { return nil },
+		},
+	}
+}
+
 func main() {
 	commandMap := getCommandMap()
 
 	cache := pokecache.NewCache(cacheDuration)
 
-	config := &config{
+	state := &state{
 		Previous: "",
 		Next:     baseUrl + "/location-area",
 		Cache:    &cache,
@@ -201,12 +261,24 @@ func main() {
 			fmt.Fprintln(os.Stderr, "reading standard input:", err)
 		}
 
-		command, ok := commandMap[option]
-		if !ok {
+		arguments := cleanInput(option)
+		command, found := commandMap[arguments[0]]
+
+		if !found {
 			fmt.Fprintln(os.Stderr, "Unknow Command")
-			callbackHelp(nil)
-		} else {
-			command.callback(config)
+			callbackHelp(nil, nil)
+			continue
+		}
+
+		err := command.validateCommand(arguments)
+		if err != nil {
+			fmt.Printf("%s\n", err.Error())
+			continue
+		}
+
+		err = command.callback(state, arguments[1:])
+		if err != nil {
+			fmt.Printf("%s\n", err.Error())
 		}
 	}
 }
