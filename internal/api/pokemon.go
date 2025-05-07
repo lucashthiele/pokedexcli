@@ -33,6 +33,30 @@ func GetPokemons(url string) (model.PokemonResponse, error) {
 	return pokemon, nil
 }
 
+func GetPokemon(url string) (model.Pokemon, error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		return model.Pokemon{}, err
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return model.Pokemon{}, err
+	}
+
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return model.Pokemon{}, fmt.Errorf("BodyContent: %v", body)
+	}
+	pokemon := model.Pokemon{}
+	err = json.Unmarshal(body, &pokemon)
+	if err != nil {
+		return pokemon, err
+	}
+
+	return pokemon, nil
+}
+
 func UnmarshalPokemonResponse(response []byte) (model.PokemonResponse, error) {
 	pokemon := model.PokemonResponse{}
 

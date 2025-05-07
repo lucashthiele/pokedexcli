@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"math"
+	"math/rand"
 	"net/url"
 	"os"
 	"strings"
@@ -17,11 +19,19 @@ import (
 
 const baseUrl = config.BaseUrl
 const cacheDuration = time.Minute * time.Duration(10)
+const minCatchChance float64 = 0.05
+const maxCatchChance float64 = 0.95
+const maxBaseExperience int = 635
+
+type pokedex struct {
+	caughtPokemons map[string]model.Pokemon
+}
 
 type state struct {
 	Previous string
 	Next     string
 	Cache    *pokecache.Cache
+	Pokedex  *pokedex
 }
 
 type cliCommand struct {
@@ -185,6 +195,52 @@ func callbackExplore(state *state, params []string) error {
 	return nil
 }
 
+func calculateCatchChance(pokemon model.Pokemon) int {
+	var difficulty float64 = float64(pokemon.BaseExperience) / float64(maxBaseExperience)
+
+	catchChance := maxCatchChance - (maxCatchChance-minCatchChance)*difficulty
+
+	return int(math.Max(minCatchChance, math.Min(catchChance, maxCatchChance)) * 100)
+}
+
+func validateCatchCommand(arguments []string) error {
+	if len(arguments) != 2 {
+		return fmt.Errorf("expected 1 argument, found %d", len(arguments)-1)
+	}
+	return nil
+}
+
+func callbackCatch(state *state, params []string) error {
+	pokemonName := params[0]
+	if pokemonName == "" {
+		return fmt.Errorf("you need to provide a pokemon for this command\n")
+	}
+
+	fmt.Printf("Throwing a Pokeball at %s...\n", pokemonName)
+
+	requestUrl, err := url.JoinPath(config.BaseUrl, "pokemon", pokemonName)
+	if err != nil {
+		return err
+	}
+
+	pokemon, err := api.GetPokemon(requestUrl)
+	if err != nil {
+		return fmt.Errorf("error fetching data from api: %v", err)
+	}
+
+	catchChance := calculateCatchChance(pokemon) // 1 - 100
+	roll := rand.Intn(100)
+
+	if roll < catchChance {
+		fmt.Printf("%s was caught!\n", pokemon.Name)
+		state.Pokedex.caughtPokemons[pokemon.Name] = pokemon
+		return nil
+	}
+
+	fmt.Printf("%s escaped!\n", pokemon.Name)
+	return nil
+}
+
 func callbackHelp(state *state, params []string) error {
 	commands := getCommandMap()
 	fmt.Printf("\nWelcome to the Pokedex!\nUsage:\n\n")
@@ -223,6 +279,12 @@ func getCommandMap() map[string]cliCommand {
 			callback:        callbackExplore,
 			validateCommand: validateExploreCommand,
 		},
+		"catch": {
+			name:            "catch <pokemon-name>",
+			description:     "Try to catch the given Pokémon. The chance of catching it is calculated based on its base experience",
+			callback:        callbackCatch,
+			validateCommand: validateCatchCommand,
+		},
 		"help": {
 			name:            "help",
 			description:     "Displays a help message",
@@ -247,6 +309,9 @@ func main() {
 		Previous: "",
 		Next:     baseUrl + "/location-area",
 		Cache:    &cache,
+		Pokedex: &pokedex{
+			caughtPokemons: make(map[string]model.Pokemon),
+		},
 	}
 
 	scanner := bufio.NewScanner(os.Stdin)
