@@ -27,6 +27,15 @@ type pokedex struct {
 	caughtPokemons map[string]model.Pokemon
 }
 
+func (p *pokedex) ToString() string {
+	result := "Your Pokedex:\n"
+	for _, pokemon := range p.caughtPokemons {
+		result += fmt.Sprintf(" - %s\n", pokemon.Name)
+	}
+
+	return result
+}
+
 type state struct {
 	Previous string
 	Next     string
@@ -273,6 +282,11 @@ func callbackInspect(state *state, params []string) error {
 	return nil
 }
 
+func callbackPokedex(state *state, params []string) error {
+	fmt.Printf(state.Pokedex.ToString())
+	return nil
+}
+
 func callbackHelp(state *state, params []string) error {
 	commands := getCommandMap()
 	fmt.Printf("\nWelcome to the Pokedex!\nUsage:\n\n")
@@ -322,6 +336,12 @@ func getCommandMap() map[string]cliCommand {
 			description:     "Get information about some pokemon you have caught.",
 			callback:        callbackInspect,
 			validateCommand: validateInspectCommand,
+		},
+		"pokedex": {
+			name:            "pokedex",
+			description:     "List all pokemons in yous pokedex.",
+			callback:        callbackPokedex,
+			validateCommand: func(arguments []string) error { return nil },
 		},
 		"help": {
 			name:            "help",
