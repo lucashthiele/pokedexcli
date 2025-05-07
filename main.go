@@ -241,6 +241,38 @@ func callbackCatch(state *state, params []string) error {
 	return nil
 }
 
+func findPokemon(state *state, pokemonName string) (model.Pokemon, error) {
+	pokemon, found := state.Pokedex.caughtPokemons[pokemonName]
+	if !found {
+		return model.Pokemon{}, fmt.Errorf("inspected pokemon has not been caught yet")
+	}
+
+	return pokemon, nil
+}
+
+func validateInspectCommand(arguments []string) error {
+	if len(arguments) != 2 {
+		return fmt.Errorf("expected 1 argument, found %d", len(arguments)-1)
+	}
+	return nil
+}
+
+func callbackInspect(state *state, params []string) error {
+	pokemonName := params[0]
+	if pokemonName == "" {
+		return fmt.Errorf("you need to provide a pokemon for this command\n")
+	}
+
+	pokemon, err := findPokemon(state, pokemonName)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf(pokemon.ToString())
+
+	return nil
+}
+
 func callbackHelp(state *state, params []string) error {
 	commands := getCommandMap()
 	fmt.Printf("\nWelcome to the Pokedex!\nUsage:\n\n")
@@ -284,6 +316,12 @@ func getCommandMap() map[string]cliCommand {
 			description:     "Try to catch the given Pokémon. The chance of catching it is calculated based on its base experience",
 			callback:        callbackCatch,
 			validateCommand: validateCatchCommand,
+		},
+		"inspect": {
+			name:            "inspect <pokemon-name>",
+			description:     "Get information about some pokemon you have caught.",
+			callback:        callbackInspect,
+			validateCommand: validateInspectCommand,
 		},
 		"help": {
 			name:            "help",
